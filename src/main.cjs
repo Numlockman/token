@@ -16,6 +16,8 @@ else {
         let data;
         switch(action){
           case 'state':data=ledger.snapshot();break;
+          case 'request:add':data=ledger.addRequest(args);break;
+          case 'request:remove':data=ledger.removeRequest(args);break;
           case 'prepare':data=ledger.prepare(args);break;
           case 'submit':data=ledger.submit(args);break;
           case 'cancel':data=ledger.cancel();break;

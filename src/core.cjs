@@ -14,8 +14,18 @@ function settings(s) {
   check(s && [3,4].includes(s.successDenominator) && integer(s.reward,1,999999),'成功率は1/3または1/4、報酬は0.1〜99999.9 Coinです');
   return {successDenominator:s.successDenominator,reward:s.reward};
 }
-function payload(b, nonce=b.nonce) { return b.from+b.to+String(b.amount).padStart(6,'0')+b.prevHash+nonce; }
-function hash(data, version=2) {
+function payload(b, nonce=b.nonce) {
+  if(b.version===3) return b.miner+nonce+b.from+String(b.amount).padStart(3,'0')+b.to+b.prevHash;
+  return b.from+b.to+String(b.amount).padStart(6,'0')+b.prevHash+nonce;
+}
+function hash(data, version=3) {
+  if(version===3) {
+    check(typeof data==='string' && /^\d{35}$/.test(data),'計算データは35桁必要です');
+    const [a,b,c,d,e,f,g]=data.match(/.{5}/g).map(n=>Number(n.slice(0,2))+Number(n.slice(2)));
+    const X=(a+c+e+g)%1000;
+    const Y=(b+d+f+g)%90+10;
+    return String(X*Y%10000).padStart(4,'0');
+  }
   check(typeof data === 'string' && /^\d{30}$/.test(data),'計算データは30桁必要です');
   const [A,B,C,D,E,F] = data.match(/.{5}/g).map(Number);
   check(version===1 || version===2,'未対応のハッシュ方式です');
@@ -33,7 +43,7 @@ function hash(data, version=2) {
 function calibrate(b, denominator) {
   check([3,4].includes(denominator),'成功率が不正です');
   const histogram=new Uint32Array(10000);
-  for(let n=0;n<10000;n++) histogram[Number(hash(payload(b,String(n).padStart(4,'0')),2))]++;
+  for(let n=0;n<10000;n++) histogram[Number(hash(payload(b,String(n).padStart(4,'0')),b.version??2))]++;
   let total=0, bestError=Infinity, result;
   for(let difficulty=1;difficulty<=10000;difficulty++) {
     total+=histogram[difficulty-1];
@@ -46,17 +56,17 @@ function state() { return {blocks:[],bank:Object.create(null)}; }
 function register(s, value) { id(value); if (!(value in s.bank)) s.bank[value]=0; }
 function validate(s,b) {
   if (!s.blocks.length) { check(JSON.stringify(b)===JSON.stringify(GENESIS),'Genesisが不正です'); return; }
-  check(b && (b.version===1 || b.version===2) && b.index===s.blocks.length,'ブロック番号または形式が不正です');
+  check(b && [1,2,3].includes(b.version) && b.index===s.blocks.length,'ブロック番号または形式が不正です');
   check(b.prevHash===s.blocks.at(-1).hash,'前Hashが一致しません');
   check(b.type==='reward'||b.type==='transfer','ブロック種別が不正です');
   id(b.miner);
   check(integer(b.difficulty,1,10000) && integer(b.reward,1,999999),'判定上限または報酬が不正です');
-  if(b.version===2) settings(b);
-  else check(s.blocks.at(-1).version===1,'旧方式への巻き戻しはできません');
-  check(integer(b.amount,0,999999),'金額が不正です');
+  if(b.version>=2) settings(b);
+  check(b.version>=s.blocks.at(-1).version,'旧方式への巻き戻しはできません');
+  check(integer(b.amount,0,b.version===3?999:999999),'金額が不正です');
   check(typeof b.nonce==='string' && /^\d{4}$/.test(b.nonce),'Nonceは4桁です');
   check(typeof b.hash==='string' && /^\d{4}$/.test(b.hash),'Hashは4桁です');
-  if (b.type==='reward') check(b.from===ZERO && b.to===b.miner && b.amount===0 && b.fee===0,'報酬ブロックが不正です');
+  if (b.type==='reward') check(b.from===ZERO && b.to===(b.version===3?ZERO:b.miner) && b.amount===0 && b.fee===0,'報酬ブロックが不正です');
   else {
     id(b.from); id(b.to);
     check(b.amount>0 && b.fee===2,'送金額または手数料が不正です');
@@ -64,7 +74,7 @@ function validate(s,b) {
   }
   check(hash(payload(b),b.version)===b.hash,'Hashの計算結果が一致しません');
   check(Number(b.hash)<b.difficulty,'Hashが判定上限以上です');
-  if(b.version===2) {
+  if(b.version>=2) {
     const expected=calibrate(b,b.successDenominator);
     check(b.difficulty===expected.difficulty && b.successCount===expected.successCount,'自動ターゲットまたは成功数が不正です');
   }
@@ -85,11 +95,11 @@ function apply(s,b) {
 }
 function candidate(s,input,config) {
   const rules=settings(config); id(input.miner);
-  const b={version:2,index:s.blocks.length,type:input.type,from:ZERO,to:input.miner,amount:0,fee:0,miner:input.miner,...rules,prevHash:s.blocks.at(-1).hash};
+  const b={version:3,index:s.blocks.length,type:input.type,from:ZERO,to:ZERO,amount:0,fee:0,miner:input.miner,...rules,prevHash:s.blocks.at(-1).hash};
   check(input.type==='reward'||input.type==='transfer','採掘の種類を選んでください');
   if(input.type==='transfer') {
     b.from=id(input.from); b.to=id(input.to); b.amount=units(input.amount); b.fee=2;
-    check(b.amount>0,'送金額は0より大きい値にしてください');
+    check(b.amount>0 && b.amount<=999,'送金額は0.1〜99.9 Coinにしてください');
     check((s.bank[b.from]||0)>=b.amount+2,'残高不足です（手数料0.2 Coinを含む）');
   }
   return {...b,...calibrate(b,rules.successDenominator)};

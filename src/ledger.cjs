@@ -5,7 +5,7 @@ const {randomUUID}=require('node:crypto');
 const C=require('./core.cjs');
 class Ledger {
   constructor(file, io=fs) {
-    this.file=file;this.io=io;this.s=C.state();this.pending=null;this.config={...C.DEFAULTS};this.warning='';this.failed=false;
+    this.file=file;this.io=io;this.s=C.state();this.pending=[];this.round=null;this.requests=[];this.requestSequence=0;this.config={...C.DEFAULTS};this.warning='';this.failed=false;
     io.mkdirSync(path.dirname(file),{recursive:true});
     if(!io.existsSync(file)) { this.append(C.GENESIS); return; }
     const bytes=io.readFileSync(file);
@@ -35,21 +35,51 @@ class Ledger {
     } catch(e) {this.failed=true;if(fd!==undefined)try{this.io.closeSync(fd);}catch{};throw new Error('保存に失敗しました。再起動して台帳を確認してください: '+e.message);}
     C.apply(this.s,b);
   }
+  ensureWritable() {C.check(!this.failed,'保存エラー後のため、アプリを再起動してください');}
+  addRequest(input) {
+    this.ensureWritable();
+    const from=C.id(input.from),to=C.id(input.to),amount=C.units(input.amount);
+    C.check(amount>0 && amount<=999,'送金額は0.1〜99.9 Coinにしてください');
+    C.check((this.s.bank[from]||0)>=amount+2,'残高不足です（手数料0.2 Coinを含む）');
+    C.register(this.s,from);C.register(this.s,to);
+    this.requests.push({id:randomUUID(),number:++this.requestSequence,from,to,amount});
+    return this.snapshot();
+  }
+  removeRequest(requestId) {
+    this.ensureWritable();
+    C.check(this.round?.requestId!==requestId,'採掘中の依頼は削除できません。先にラウンドを取り消してください');
+    C.check(this.requests.some(r=>r.id===requestId),'依頼が見つかりません');
+    this.requests=this.requests.filter(r=>r.id!==requestId);return this.snapshot();
+  }
   prepare(input) {
-    C.check(!this.failed,'再起動が必要です');C.check(!this.pending,'現在の採掘課題を確定または取り消してください');
-    const b=C.candidate(this.s,input,this.config);
-    this.pending={...b,token:randomUUID()};
-    C.register(this.s,b.miner);if(b.type==='transfer'){C.register(this.s,b.from);C.register(this.s,b.to);}
+    this.ensureWritable();C.id(input.miner);
+    const requestId=input.requestId??null;
+    C.check(this.pending.length<3,'同時に発行できる問題は3人分までです');
+    C.check(!this.pending.some(b=>b.miner===input.miner),'同じ採掘者IDには発行済みです');
+    if(this.round) C.check(this.round.requestId===requestId,'別の取引は同時に採掘できません。現在のラウンドを完了してください');
+    const request=requestId===null?null:this.requests.find(r=>r.id===requestId);
+    C.check(requestId===null || request,'依頼が見つかりません');
+    const b=C.candidate(this.s,request?{type:'transfer',from:request.from,to:request.to,amount:C.coin(request.amount),miner:input.miner}:{type:'reward',miner:input.miner},this.config);
+    if(this.round) {
+      const first=this.pending[0];
+      for(const key of ['version','index','type','from','to','amount','fee','prevHash','reward','successDenominator'])
+        C.check(b[key]===first[key],'現在のラウンドと条件が異なります');
+    } else this.round={id:randomUUID(),requestId};
+    this.pending.push({...b,token:randomUUID()});C.register(this.s,b.miner);
     return this.snapshot();
   }
   submit(input) {
-    C.check(this.pending && this.pending.token===input.token,'課題が無効です。画面を更新してください');
-    const {token,...base}=this.pending;
+    this.ensureWritable();
+    const task=this.pending.find(b=>b.token===input.token);
+    C.check(task,'この問題は無効です。ほかの採掘者が確定したか、取り消されています');
+    const {token,...base}=task;
     const block={...base,nonce:input.nonce,hash:input.hash};
-    this.append(block);this.pending=null;return this.snapshot();
+    this.append(block); // Only successful durable append can consume a request or end a round.
+    if(this.round.requestId!==null) this.requests=this.requests.filter(r=>r.id!==this.round.requestId);
+    this.pending=[];this.round=null;return this.snapshot();
   }
-  cancel() {this.pending=null;return this.snapshot();}
-  configure(s) {C.check(!this.pending,'設定変更の前に課題を確定または取り消してください');this.config=C.settings(s);return this.snapshot();}
+  cancel() {this.ensureWritable();this.pending=[];this.round=null;return this.snapshot();}
+  configure(s) {this.ensureWritable();C.check(!this.round,'設定変更の前にラウンドを確定または取り消してください');this.config=C.settings(s);return this.snapshot();}
   lookup(value) {
     C.register(this.s,value);
     const history=this.s.blocks.filter(b=>b.from===value||b.to===value||b.miner===value);
@@ -58,6 +88,6 @@ class Ledger {
       paidFees:history.reduce((a,b)=>a+(b.from===value?b.fee:0),0),
       receivedFees:history.reduce((a,b)=>a+(b.miner===value?b.fee:0),0),history};
   }
-  snapshot() {return {blocks:this.s.blocks.slice(-100).reverse(),count:this.s.blocks.length-1,bank:this.s.bank,config:this.config,pending:this.pending,warning:this.warning,file:this.file,failed:this.failed};}
+  snapshot() {return {blocks:this.s.blocks.slice(-100).reverse(),count:this.s.blocks.length-1,bank:this.s.bank,config:this.config,pending:this.pending,round:this.round,requests:this.requests.map(r=>({...r,active:this.round?.requestId===r.id,affordable:(this.s.bank[r.from]||0)>=r.amount+2})),warning:this.warning,file:this.file,failed:this.failed};}
 }
 module.exports={Ledger};
