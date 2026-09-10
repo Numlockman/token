@@ -1,8 +1,8 @@
 'use strict';
 const $=id=>document.getElementById(id),coin=n=>(n/10).toFixed(1);
 let snapshot=null,selectedRequest=null,busy=false;
-async function call(action,args){if(!window.mining)throw Error('Electronアプリで起動してください。READMEをご覧ください。');const r=await window.mining.call(action,args);if(!r.ok)throw Error(r.error);return r.data;}
-function describe(r){return r?`${r.from} → ${r.to} / ${coin(r.amount)} Coin（手数料0.2）`:'採掘のみ（送金なし）';}
+async function call(action,args){if(!window.mining)throw Error('Electronアプリで起動してください。READMEをご覧ください。');const r=await window.mining.call(action,args);if(!r.ok)throw Error(r.error.replaceAll('Coin','NSG'));return r.data;}
+function describe(r){return r?`${r.from} → ${r.to} / ${coin(r.amount)} NSG（手数料0.2）`:'採掘のみ（送金なし）';}
 function render(s){
   const drafts=new Map([...document.querySelectorAll('.task')].map(card=>[card.dataset.token,{nonce:card.querySelector('[name=nonce]').value,hash:card.querySelector('[name=hash]').value}]));
   snapshot=s;
@@ -25,7 +25,7 @@ function render(s){
     const select=document.createElement('button');select.type='button';select.className='note-select';select.dataset.request=r.id;
     select.disabled=s.failed||!!(s.round&&!r.active)||!r.affordable;select.setAttribute('aria-pressed',String(r.id===selectedRequest));
     const title=document.createElement('strong');title.textContent=`依頼 #${r.number}`;
-    const detail=document.createElement('span');detail.textContent=`${r.from}\n↓\n${r.to}\n${coin(r.amount)} Coin`;
+    const detail=document.createElement('span');detail.textContent=`${r.from}\n↓\n${r.to}\n${coin(r.amount)} NSG`;
     const status=document.createElement('small');status.textContent=r.active?'採掘中':!r.affordable?'残高不足・選択不可':r.id===selectedRequest?'選択中':'クリックして選択';select.append(title,detail,status);
     const remove=document.createElement('button');remove.type='button';remove.className='note-remove';remove.dataset.remove=r.id;remove.textContent='依頼を取り下げる';remove.disabled=r.active||s.failed;
     note.append(select,remove);$('board').append(note);
@@ -37,7 +37,7 @@ function render(s){
     const set=(selector,value)=>card.querySelector(selector).textContent=value;
     set('.task-number',`ブロック #${b.index} / 問題 ${i+1} / 識別番号 ${b.token}`);
     set('.task-miner',`採掘者 ${b.miner}`);set('.task-transaction',b.type==='reward'?'採掘のみ':describe(b));
-    set('.task-meta',`前Hash ${b.prevHash} / 報酬 ${coin(b.reward)} ＋ 手数料 ${coin(b.fee)} Coin`);
+    set('.task-meta',`前Hash ${b.prevHash} / 報酬 ${coin(b.reward)} ＋ 手数料 ${coin(b.fee)} NSG`);
     const data=b.miner+'????'+b.from+String(b.amount).padStart(3,'0')+b.to+b.prevHash;
     set('.digits',data.match(/.{5}/g).join(' '));set('.condition',`成功条件：Hash < ${b.difficulty}`);
     set('.probability',`成功率 ${(b.successCount/100).toFixed(2)}%（目標1/${b.successDenominator}）・先に正解を確定した1人のみ有効`);
@@ -49,7 +49,7 @@ function render(s){
 async function act(fn){if(busy)return;busy=true;document.body.setAttribute('aria-busy','true');try{await fn();}catch(e){$('notice').textContent=e.message;try{render(await call('state'));}catch{}}finally{busy=false;document.body.removeAttribute('aria-busy');}}
 for(const name of ['prepare','request','settings','lookup'])$(name).addEventListener('submit',event=>{
   event.preventDefault();act(async()=>{const f=Object.fromEntries(new FormData(event.target));
-    if(name==='lookup'){const a=await call('lookup',f.id);$('account').textContent=`ID: ${a.id}\n残高: ${coin(a.balance)} Coin\n採掘回数: ${a.miningCount}\n採掘報酬: ${coin(a.rewards)} Coin\n支払手数料: ${coin(a.paidFees)} / 受取手数料: ${coin(a.receivedFees)} Coin`;$('history').textContent=a.history.slice(-20).reverse().map(b=>`#${b.index} ${b.from} → ${b.to} / ${coin(b.amount)} Coin / 採掘者 ${b.miner}`).join(' ｜ ');return;}
+    if(name==='lookup'){const a=await call('lookup',f.id);$('account').textContent=`ID: ${a.id}\n残高: ${coin(a.balance)} NSG\n採掘回数: ${a.miningCount}\n採掘報酬: ${coin(a.rewards)} NSG\n支払手数料: ${coin(a.paidFees)} / 受取手数料: ${coin(a.receivedFees)} NSG`;$('history').textContent=a.history.slice(-20).reverse().map(b=>`#${b.index} ${b.from} → ${b.to} / ${coin(b.amount)} NSG / 採掘者 ${b.miner}`).join(' ｜ ');return;}
     if(name==='prepare')f.requestId=selectedRequest;
     if(name==='settings'){f.successDenominator=Number(f.successDenominator);f.reward=Math.round(Number(f.reward)*10);}
     render(await call(name==='request'?'request:add':name,f));
