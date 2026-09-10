@@ -53,7 +53,7 @@ for(const name of ['prepare','request','settings','lookup'])$(name).addEventList
     if(name==='prepare')f.requestId=selectedRequest;
     if(name==='settings'){f.successDenominator=Number(f.successDenominator);f.reward=Math.round(Number(f.reward)*10);}
     render(await call(name==='request'?'request:add':name,f));
-    $('notice').textContent=name==='prepare'?'問題を発行しました。印刷して採掘者に渡してください。':name==='request'?'送金依頼を掲示しました。付箋をクリックして選べます。':'設定を更新しました。';
+    $('notice').textContent=name==='prepare'?'問題を発行しました。画面の数字と計算式を確認してください。':name==='request'?'送金依頼を掲示しました。付箋をクリックして選べます。':'設定を更新しました。';
     if(name!=='settings')event.target.reset();
   });
 });
@@ -69,7 +69,6 @@ $('tasks').addEventListener('submit',event=>{event.preventDefault();const form=e
   $('notice').textContent=`採掘者 ${winner} が先着で確定しました。台帳へ保存済みです。他の問題は無効になりました。`;
   $('account').textContent='残高が更新されました。IDを再検索してください。';$('history').textContent='';
 });});
-$('tasks').onclick=event=>{const button=event.target.closest('.print');if(!button||busy)return;const card=button.closest('.task');card.classList.add('print-target');try{window.print();}finally{card.classList.remove('print-target');}};
 $('cancel').onclick=()=>act(async()=>{if(confirm('全員の問題を無効にしてラウンドを取り消しますか？ 送金依頼は掲示板に残ります。')){render(await call('cancel'));$('notice').textContent='ラウンドを取り消しました。配布済みの問題は無効です。';}});
 $('folder').onclick=()=>act(()=>call('folder'));
 $('backup').onclick=()=>act(async()=>{$('notice').textContent=await call('backup')?'バックアップを保存しました。':'バックアップを中止しました。';});
