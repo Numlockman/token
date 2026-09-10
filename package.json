@@ -1,0 +1,29 @@
+{
+  "name": "human-mining",
+  "version": "1.0.0",
+  "private": true,
+  "description": "文化祭 人力マイニング",
+  "author": "Festival team",
+  "license": "UNLICENSED",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist:win": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "43.6.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "school.festival.humanmining",
+    "productName": "HumanMining",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable"
+    }
+  }
+}
