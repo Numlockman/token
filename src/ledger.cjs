@@ -23,7 +23,7 @@ class Ledger {
       this.warning=`未完了の末尾を退避して復旧しました。退避先: ${backup}`;
     }
     if(!this.s.blocks.length) this.append(C.GENESIS);
-    const last=this.s.blocks.at(-1);if(last.type!=='genesis')this.config=C.settings(last);
+    const last=this.s.blocks.at(-1);if(last.type!=='genesis')this.config=last.version===1?{...C.DEFAULTS,reward:last.reward}:C.settings(last);
   }
   append(b) {
     C.check(!this.failed,'保存エラー後のため、アプリを再起動してください');C.validate(this.s,b);
